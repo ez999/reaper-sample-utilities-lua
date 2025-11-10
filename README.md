@@ -9,7 +9,7 @@ into RS5k based instruments.
 Scripts:
 - `MidiNoteSeparator.lua`
 - `ExplodeMidiToNotesAndCreateNamedRegions.lua`
-- `RS5kMapping.lua`
+- `RS5kOrTX16WxMapping.lua`
 - plus an example MIDI file (`Sampler Midi - from C1 to B8 MIDI 160BPM.mid`).
 
 You are free to modify these scripts for your own workflow.
@@ -28,7 +28,7 @@ You are free to modify these scripts for your own workflow.
 4. Copy these files into that folder:
    - `MidiNoteSeparator.lua`
    - `ExplodeMidiToNotesAndCreateNamedRegions.lua`
-   - `RS5kMapping.lua`
+   - `RS5kOrTX16WxMapping.lua`
 
 ### 0.2. Load the scripts into the Action List
 
@@ -65,8 +65,8 @@ Typical end to end workflow for sampling and building an RS5k instrument:
    to create one note object per note and named regions.
 5. Render the audio so that you get one audio item per note
    (or use regions to batch render).
-6. Use `RS5kMapping.lua` on those audio items to automatically create
-   a mapped RS5k instrument with envelopes and looping already set.
+6. Use `RS5kOrTX16WxMapping.lua` on those audio items to automatically create
+   a mapped sampler instrument (RS5k or TX16Wx) with envelopes and looping already set.
 
 You can of course swap or skip steps depending on your use case.
 
@@ -167,7 +167,7 @@ then render each region or item to get separate audio files per note.
 
 ---
 
-## 4. RS5kMapping.lua
+## 4. RS5kOrTX16WxMapping.lua
 
 ### 4.1. Purpose
 
@@ -232,14 +232,117 @@ The script will:
 - set the ADSR and loop parameters according to your input,
 - create a MIDI item that triggers all samples.
 
-You can now play or sequence this RS5k instrument inside REAPER
+You can now play or sequence this sampler instrument inside REAPER
+or as part of a Reactional Music authoring workflow.
+
+---
+
+## 4. RS5kOrTX16WxMapping.lua
+
+### 4.1. Purpose
+
+This script turns a set of audio items into a multi-sample instrument
+using either ReaSamplOmatic5000 (RS5k) or TX16Wx sampler. It was originally
+based on MPL's "Export selected items to RS5k instances" script, and then heavily
+extended for sampling and sound design with support for both samplers.
+
+### 4.2. Main features
+
+**Dual Sampler Support:**
+- **RS5k mode**: Creates one RS5k instance per audio item on the target track (multi-instance)
+- **TX16Wx mode**: Creates a single TX16Wx instance with multiple regions (single-instance)
+- User-friendly Yes/No dialogs for sampler and loop selection
+
+**Note-Aware Mapping:**
+- Each sample is mapped to a single MIDI note
+- The script automatically detects the MIDI note from take or file
+  names (C3, F#2, Bb4, etc). If that fails it falls back to a base
+  pitch you specify
+- A new MIDI item is created that triggers all samples in sequence
+
+**ADSR Envelope Control:**
+- Attack, Decay, Release in milliseconds
+- Sustain in dB
+- For RS5k: uses extended normalized parameter ranges (beyond UI limits)
+- For TX16Wx: generates proper XML with tx:aeg envelope parameters
+
+**Loop Settings in Beats:**
+- Enable/disable loop via Yes/No dialog
+- BPM (0 = use project tempo at first item)
+- Loop start in beats
+- Loop length in beats
+- Loop crossfade in beats (RS5k only)
+- RS5k: converts to ms and applies via loop parameters
+- TX16Wx: converts to samples and writes to .txprog XML
+
+**TX16Wx Preset Generation:**
+- Creates proper TX16Wx XML with namespace declarations
+- Maps each sample to a region with correct note bounds
+- Includes ADSR envelope and loop settings
+- Preset named after track name for easy organization
+- File saved in project folder with instructions for loading
+
+**Safer Source Offsets (RS5k):**
+- The script is careful to keep the attack region of the sample
+- It does not move the "Start in source" offset
+- Only shortens the "End in source" parameter when a finite loop window is set
+
+### 4.3. Using the script
+
+1. Prepare your audio items:
+   - Each item should contain one note or sound that you want to map
+   - It is helpful if the take or file names contain note names
+     (C2, D#2, F3, Bb4, etc), as this improves automatic mapping
+2. Create or select the track that will host the sampler instance(s)
+3. Select all audio items you want to turn into a multisample
+4. Run `RS5kOrTX16WxMapping.lua`
+5. **First dialog: Choose sampler**
+   - **YES** = RS5k (multiple instances, one per sample)
+   - **NO** = TX16Wx (single instance with regions)
+6. **Second dialog: Base pitch**
+   - Enter a MIDI note number (0 to 127) used as fallback when
+     no note can be parsed from names
+7. **Third dialog: Enable loop?**
+   - **YES** = loop enabled (shows loop parameters)
+   - **NO** = no loop (shows only ADSR parameters)
+8. **Fourth dialog: Parameters**
+   - **If loop disabled** (4 fields):
+     - Attack (ms)
+     - Decay (ms)
+     - Release (ms)
+     - Sustain (dB)
+   - **If loop enabled** (8 fields):
+     - Attack (ms)
+     - Decay (ms)
+     - Release (ms)
+     - Sustain (dB)
+     - BPM (0 = use project tempo)
+     - Loop start (beats)
+     - Loop length (beats)
+     - Loop crossfade (beats)
+9. Confirm
+
+**For RS5k:**
+- The script will insert one RS5k instance per item on the selected track
+- Map each instance to its MIDI note
+- Set the ADSR and loop parameters according to your input
+- Create a MIDI item that triggers all samples
+
+**For TX16Wx:**
+- The script will insert one TX16Wx instance on the selected track
+- Generate a .txprog preset file in the project folder
+- Show instructions for loading the preset
+- The preset contains all samples mapped to their notes with ADSR and loop settings
+- Open TX16Wx, click the dropdown menu at top-left, select "Load Program", and load the .txprog file
+
+You can now play or sequence this sampler instrument inside REAPER
 or as part of a Reactional Music authoring workflow.
 
 ---
 
 ## 5. Credits and licensing
 
-`RS5kMapping.lua` started as a fork of MPLs
+`RS5kOrTX16WxMapping.lua` started as a fork of MPL's
 "Export selected items to RS5k instances on selected track (use original source)".
 The logic has been extended with note name parsing, parameter handling
 in ms/dB, and loop control in beats and BPM.
