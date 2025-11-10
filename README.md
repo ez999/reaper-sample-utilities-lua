@@ -55,8 +55,7 @@ Optional but recommended: assign a shortcut or toolbar button.
 Typical end to end workflow for sampling and building an RS5k instrument:
 
 1. Create a MIDI pattern that plays the notes you want to sample.
-   - You can use the included example MIDI file (for example `ExamplePattern.mid`)
-     as a starting point. It is programmed with some silence between notes
+   - You can use the included example MIDI file as a starting point. It is programmed with some silence between notes
      to allow long tails to ring out.
 2. If you need more or less space between notes, use
    `MidiNoteSeparator.lua` to shift later notes forward and increase
