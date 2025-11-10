@@ -44,7 +44,7 @@ local function clone_table(t)
   return out
 end
 
--- trova l'item della lista che contiene il tempo t
+-- find the item in the list that contains time t
 local function find_item_spanning_time(items, t)
   for i, it in ipairs(items) do
     local pos = r.GetMediaItemInfo_Value(it, "D_POSITION")
@@ -56,7 +56,7 @@ local function find_item_spanning_time(items, t)
   return nil, nil
 end
 
--- split "gestito" mantenendo la lista aggiornata
+-- managed split keeping the list updated
 local function split_items_list(items, t)
   local idx, it = find_item_spanning_time(items, t)
   if not idx then return false end
@@ -68,13 +68,13 @@ local function split_items_list(items, t)
   return false
 end
 
--- ---------- main per un item ----------
+-- ---------- main for one item ----------
 local function process_midi_item(item, tail_ms, prefer_sharps)
   local take = r.GetActiveTake(item)
   if not take or not r.TakeIsMIDI(take) then return end
   local track = r.GetMediaItemTrack(item)
 
-  -- raccogli note
+  -- collect notes
   local _, note_cnt, _, _ = r.MIDI_CountEvts(take)
   if note_cnt == 0 then return end
 
@@ -91,12 +91,12 @@ local function process_midi_item(item, tail_ms, prefer_sharps)
     return a.s < b.s
   end)
 
-  -- limiti item originali
+  -- original item boundaries
   local item_pos = r.GetMediaItemInfo_Value(item, "D_POSITION")
   local item_len = r.GetMediaItemInfo_Value(item, "D_LENGTH")
   local item_end = item_pos + item_len
 
-  -- 1) costruiamo i "boundaries" per gli split (start delle note e end+tail)
+  -- 1) build the "boundaries" for splits (note starts and end+tail)
   local bounds = {}
   local function add_bound(t)
     if t <= item_pos + 1e-9 or t >= item_end - 1e-9 then return end
@@ -112,26 +112,26 @@ local function process_midi_item(item, tail_ms, prefer_sharps)
 
   table.sort(bounds)
 
-  -- 2) split gestito: teniamo lista pezzi derivati dall'item
+  -- 2) managed split: keep list of pieces derived from the item
   local pieces = { item }
   for _, t in ipairs(bounds) do
     split_items_list(pieces, t)
   end
 
-  -- 3) mappiamo "pezzo giusto" per ogni nota (start = s, end = e_tail)
-  local keep = {}  -- set di item da tenere
+  -- 3) map "right piece" for each note (start = s, end = e_tail)
+  local keep = {}  -- set of items to keep
   local EPS = 1e-6
 
   for i, n in ipairs(notes) do
     local e_tail = math.min(item_end, n.e + tail_s)
-    -- cerca tra i pezzi quello che coincide con [s, e_tail]
+    -- search among pieces for the one that matches [s, e_tail]
     for _, it in ipairs(pieces) do
       local pos = r.GetMediaItemInfo_Value(it, "D_POSITION")
       local len = r.GetMediaItemInfo_Value(it, "D_LENGTH")
       local fin = pos + len
       if math.abs(pos - n.s) < EPS and math.abs(fin - e_tail) < EPS then
         keep[it] = true
-        -- rinomina take con il nome nota
+        -- rename take with note name
         local tk = r.GetActiveTake(it)
         local nm = midi_pitch_to_name(n.pitch, prefer_sharps)
         if tk then r.GetSetMediaItemTakeInfo_String(tk, "P_NAME", nm, true) end
@@ -140,14 +140,14 @@ local function process_midi_item(item, tail_ms, prefer_sharps)
     end
   end
 
-  -- 4) elimina i pezzi non utilizzati
+  -- 4) delete unused pieces
   for _, it in ipairs(pieces) do
     if not keep[it] then
       r.DeleteTrackMediaItem(track, it)
     end
   end
 
-  -- 5) crea regioni: start nota -> start nota successiva, nome = nota
+  -- 5) create regions: note start -> next note start, name = note
   for i, n in ipairs(notes) do
     local nm = midi_pitch_to_name(n.pitch, prefer_sharps)
     local st = n.s
@@ -155,7 +155,7 @@ local function process_midi_item(item, tail_ms, prefer_sharps)
     if i < #notes then
       en = notes[i+1].s
     else
-      -- per l’ultima, usa end item o fine nota + tail (a tua scelta).
+      -- for the last one, use item end or note end + tail (your choice).
       en = math.min(item_end, n.e + tail_s)
     end
     if en > st + 1e-9 then
@@ -174,9 +174,9 @@ local function main()
 
   local sel_cnt = r.CountSelectedMediaItems(0)
   if sel_cnt == 0 then
-    r.MB("Seleziona almeno un item MIDI.","Explode MIDI",0)
+    r.MB("Select at least one MIDI item.","Explode MIDI",0)
   else
-    -- lavoriamo su una copia della selection, perché gli split cambiano gli indici
+    -- work on a copy of the selection, because splits change indices
     local items = {}
     for i=0, sel_cnt-1 do
       items[i+1] = r.GetSelectedMediaItem(0, i)

@@ -45,7 +45,7 @@
 for key in pairs(reaper) do _G[key]=reaper[key] end
 
 --------------------------- utils ---------------------------
-local OCTAVE_SHIFT = 0 -- usa +12/-12 se le ottave paiono sfasate
+local OCTAVE_SHIFT = 0 -- use +12/-12 if octaves seem shifted
 
 local function NoteNameToMidi(str)
   if not str or str=="" then return nil end
@@ -83,7 +83,7 @@ local function FindParamExact(track, fx, exactLower)
   return nil
 end
 
--- trova il toggle "Loop" evitando start/end/offset/xfade/cross/cache
+-- find the "Loop" toggle parameter, avoiding start/end/offset/xfade/cross/cache
 local function FindParamLoopToggle(track, fx)
   local cnt=reaper.TrackFX_GetNumParams(track, fx)
   local best_p, best_score = nil, -1
@@ -97,7 +97,7 @@ local function FindParamLoopToggle(track, fx)
        and not lnm:find("xfade",1,true)
        and not lnm:find("cross",1,true)
        and not lnm:find("cache",1,true) then
-         -- punteggia più alto se il nome è esattamente "loop"
+         -- score higher if the name is exactly "loop"
          local score = (lnm=="loop") and 2 or 1
          if score > best_score then best_score, best_p = score, p end
     end
@@ -120,16 +120,15 @@ end
 
 local function SetParamMs(track, fx, p, target_ms)
   if not p then return false end
-  local samples=40
-  reaper.TrackFX_SetParamNormalized(track,fx,p,1.0)
-  local vmax_raw,unitmax = formatted_to_number_and_unit(track,fx,p)
+  local samples=200  -- increased for better precision
   local function to_ms(v,unit)
     if not v then return nil end
     if unit=="ms" then return v end
     if unit=="s"  then return v*1000 end
-    if vmax_raw and vmax_raw<25 then return v*1000 end
     return v
   end
+  
+  -- First pass: find the real range by sampling everything
   local best_n=0; local best_err=1e15
   for i=0,samples do
     local n=i/samples
@@ -141,13 +140,32 @@ local function SetParamMs(track, fx, p, target_ms)
       if err<best_err then best_err, best_n = err, n end
     end
   end
+  
+  -- Second pass: refinement around the best value
+  local refinement_range = 1.0 / samples
+  local refine_samples = 50
+  for i=0,refine_samples do
+    local n = best_n + (i - refine_samples/2) * refinement_range / refine_samples
+    if n >= 0 and n <= 1 then
+      reaper.TrackFX_SetParamNormalized(track,fx,p,n)
+      local raw,unit=formatted_to_number_and_unit(track,fx,p)
+      local ms = to_ms(raw,unit)
+      if ms then
+        local err=math.abs(ms-target_ms)
+        if err<best_err then best_err, best_n = err, n end
+      end
+    end
+  end
+  
   reaper.TrackFX_SetParamNormalized(track,fx,p,best_n)
   return true
 end
 
 local function SetParamDb(track, fx, p, target_db)
   if not p then return false end
-  local samples=40
+  local samples=200  -- increased for better precision
+  
+  -- First pass: complete scan
   local best_n=0; local best_err=1e15
   for i=0,samples do
     local n=i/samples
@@ -158,6 +176,22 @@ local function SetParamDb(track, fx, p, target_db)
       if err<best_err then best_err, best_n = err, n end
     end
   end
+  
+  -- Second pass: refinement around the best value
+  local refinement_range = 1.0 / samples
+  local refine_samples = 50
+  for i=0,refine_samples do
+    local n = best_n + (i - refine_samples/2) * refinement_range / refine_samples
+    if n >= 0 and n <= 1 then
+      reaper.TrackFX_SetParamNormalized(track,fx,p,n)
+      local raw,unit=formatted_to_number_and_unit(track,fx,p)
+      if raw and (unit=="db" or unit=="?") then
+        local err=math.abs(raw-target_db)
+        if err<best_err then best_err, best_n = err, n end
+      end
+    end
+  end
+  
   reaper.TrackFX_SetParamNormalized(track,fx,p,best_n)
   return true
 end
@@ -187,7 +221,7 @@ end
 
 local function beats_to_ms(beats, bpm)
   if bpm<=0 then return 0 end
-  return beats * (60000.0 / bpm) -- quarti
+  return beats * (60000.0 / bpm) -- quarter notes
 end
 --------------------------- /utils ---------------------------
 
@@ -284,13 +318,13 @@ function main()
     local pObey=FindParamByName(track,fx,'obey') or 11
     TrackFX_SetParamNormalized(track,fx,pObey,(defObey~=0) and 1 or 0)
 
-    -- === LOOP robusto ===
+    -- === Robust LOOP ===
     local pLoop = FindParamLoopToggle(track,fx)
     if defLoop ~= 0 then
       if pLoop then
         TrackFX_SetParamNormalized(track,fx,pLoop,1)
       end
-      -- verifica; se non è attivo, forzalo via config parm e riverifica
+      -- verify; if not active, force it via config param and recheck
       local ok_on = (pLoop and (reaper.TrackFX_GetParamNormalized(track,fx,pLoop) or 0) >= 0.5)
       if not ok_on then
         TrackFX_SetNamedConfigParm(track,fx,'LOOP','1')
@@ -301,19 +335,19 @@ function main()
       if pLoop then TrackFX_SetParamNormalized(track,fx,pLoop,0) end
     end
 
-    -- Loop start offset (ms dalla partenza del campione)
+    -- Loop start offset (ms from sample start)
     local pLoopStart = FindParamExact(track,fx,'loop start offset') or FindParamByName(track,fx,'loop start')
     if pLoopStart and defLoop ~= 0 and loopStartMs > 0 then
       SetParamMs(track,fx,pLoopStart,loopStartMs)
     end
 
-    -- Crossfade (ms da battiti)
+    -- Crossfade (ms from beats)
     local pXfade = FindParamByName(track,fx,'xfade') or FindParamByName(track,fx,'crossfade')
     if pXfade and defLoop ~= 0 and loopXfadeMs > 0 then
       SetParamMs(track,fx,pXfade,loopXfadeMs)
     end
 
-    -- Delimita SOLO la fine (End in source - 14); Start (13) resta a s_offs
+    -- Delimit ONLY the end (End in source - 14); Start (13) stays at s_offs
     if src_len and src_len > 0 then
       local region_start = s_offs
       local region_end   = s_offs + it_len
@@ -322,7 +356,7 @@ function main()
       end
       local startN = math.max(0, math.min(1, region_start / src_len))
       local endN   = math.max(0, math.min(1, region_end   / src_len))
-      TrackFX_SetParamNormalized(track,fx,13,startN)  -- Start in source (immutato)
+      TrackFX_SetParamNormalized(track,fx,13,startN)  -- Start in source (unchanged)
       TrackFX_SetParamNormalized(track,fx,14,endN)    -- End in source
     end
     -- === /LOOP ===

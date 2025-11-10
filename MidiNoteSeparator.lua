@@ -20,7 +20,7 @@ local function get_user_opts()
   local ok, vals = r.GetUserInputs(
     "Shift successive notes (cumulative)",
     2,
-    "Delta per gap (beats, decimali ok),Min gap between groups (beats)",
+    "Delta per gap (beats, decimals ok),Min gap between groups (beats)",
     "0.25,0"
   )
   if not ok then return nil end
@@ -30,7 +30,7 @@ local function get_user_opts()
   return delta_beats, min_gap
 end
 
--- raccoglie le note selezionate in un take, ordinate per start (QN)
+-- collect selected notes in a take, sorted by start (QN)
 local function collect_selected_notes(take)
   local _, note_cnt = r.MIDI_CountEvts(take)
   local notes = {}
@@ -54,7 +54,7 @@ local function collect_selected_notes(take)
   return notes
 end
 
--- raggruppa per start time (QN) ~ accordi
+-- group by start time (QN) ~ chords
 local function group_by_start(notes)
   local groups = {}
   local EPS = 1e-9
@@ -76,22 +76,22 @@ local function process_take(take, delta_beats, min_gap)
 
   local groups = group_by_start(notes)
 
-  -- il primo gruppo rimane dov'è
+  -- the first group stays where it is
   local prev_new_end = groups[1].max_end_qn
 
   for gi = 2, #groups do
     local g = groups[gi]
 
-    -- shift ideale cumulativo: (gi-1) * delta
+    -- ideal cumulative shift: (gi-1) * delta
     local ideal_shift = (gi - 1) * delta_beats
 
-    -- assicura un gap minimo: start_nuovo >= fine_precedente + min_gap
+    -- ensure minimum gap: new_start >= previous_end + min_gap
     local needed = (prev_new_end + min_gap) - (g.start_qn + ideal_shift)
     local extra = math.max(0, needed)
 
     local shift = ideal_shift + extra
 
-    -- applica shift a tutte le note nel gruppo, preservando durata
+    -- apply shift to all notes in the group, preserving duration
     local new_group_max_end = -1e9
     for _, n in ipairs(g.notes) do
       local s_new_qn = n.s_qn + shift
@@ -108,10 +108,10 @@ local function process_take(take, delta_beats, min_gap)
     prev_new_end = new_group_max_end
   end
 
-  -- ordina gli eventi MIDI dopo le modifiche
+  -- sort MIDI events after modifications
   r.MIDI_Sort(take)
 
-  -- estende l'item se necessario per contenere tutte le note
+  -- extend item if necessary to contain all notes
   local item = r.GetMediaItemTake_Item(take)
   if item then
     local item_pos = r.GetMediaItemInfo_Value(item, "D_POSITION")
