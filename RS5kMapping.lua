@@ -120,6 +120,8 @@ end
 
 local function SetParamMs(track, fx, p, target_ms)
   if not p then return false end
+  -- Extended range: some RS5k params go beyond 1.0 normalized
+  local max_normalized = 10.0  -- search up to 10.0 to find extended ranges
   local samples=200  -- increased for better precision
   local function to_ms(v,unit)
     if not v then return nil end
@@ -128,10 +130,10 @@ local function SetParamMs(track, fx, p, target_ms)
     return v
   end
   
-  -- First pass: find the real range by sampling everything
+  -- First pass: find the real range by sampling with extended normalized range
   local best_n=0; local best_err=1e15
   for i=0,samples do
-    local n=i/samples
+    local n = i/samples * max_normalized  -- scan 0 to max_normalized
     reaper.TrackFX_SetParamNormalized(track,fx,p,n)
     local raw,unit=formatted_to_number_and_unit(track,fx,p)
     local ms = to_ms(raw,unit)
@@ -142,11 +144,11 @@ local function SetParamMs(track, fx, p, target_ms)
   end
   
   -- Second pass: refinement around the best value
-  local refinement_range = 1.0 / samples
+  local refinement_range = max_normalized / samples
   local refine_samples = 50
   for i=0,refine_samples do
     local n = best_n + (i - refine_samples/2) * refinement_range / refine_samples
-    if n >= 0 and n <= 1 then
+    if n >= 0 then  -- removed upper limit check
       reaper.TrackFX_SetParamNormalized(track,fx,p,n)
       local raw,unit=formatted_to_number_and_unit(track,fx,p)
       local ms = to_ms(raw,unit)
@@ -306,6 +308,7 @@ function main()
     TrackFX_SetParamNormalized(track,fx,6,0.5)
     TrackFX_SetParamNormalized(track,fx,8,0)
 
+    -- Set ADSR via parameter index (these work but may have UI limits on some params)
     local pA=FindParamByName(track,fx,'attack')
     local pD=FindParamByName(track,fx,'decay')
     local pR=FindParamByName(track,fx,'release')
